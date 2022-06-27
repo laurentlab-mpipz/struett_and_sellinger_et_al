@@ -1,0 +1,37 @@
+
+"""simulating pods under bgs with slim
+
+We first create 1 burnin for each of the 100 pods per condition and then run
+5 times the transition to selfing to mimick 5 independent loci.
+
+This workflow only works if we assume the simulation models to be a timeline.
+"""
+
+import shutil
+from scripts.pyfunctions import tsabc2
+from scripts.pyfunctions import print_utils
+
+configfile: "config/config.yaml"
+
+onstart:
+    print(f"""Sneaking into snake..""")
+
+onsuccess:
+    print("Workflow finished, no error.")
+    print("Removing files..")
+    shutil.rmtree(".snakemake", ignore_errors=True)
+    print(".snakemake/ removed.")
+
+include: "rules/module00.common.smk"
+include: "rules/module01.simulate.burnin.smk"
+include: "rules/module02.calculate.sumstats.smk"
+include: "rules/module03.calculate.more.sumstats.smk"
+include: "rules/module04.create.mhs.smk"
+
+localrules: overall
+
+rule overall:
+    input:
+        all_output
+
+

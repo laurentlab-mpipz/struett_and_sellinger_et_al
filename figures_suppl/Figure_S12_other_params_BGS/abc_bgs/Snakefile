@@ -1,0 +1,229 @@
+ 
+'''
+New implementation of the ABC pipeline written for simulations using msprime
+and the transition matrixes as summarizing statistics.
+
+@sstrue-20200108
+'''
+
+#print("Sneak to snake..")
+
+import sys
+import shutil
+import numpy as np
+import pandas as pd
+from scripts.pyfunctions import tsabc2
+from scripts.pyfunctions import print_utils
+import re
+import math
+import itertools
+import tqdm
+
+configfile: "config/config.yaml"
+
+assert config["nbatch_simulations"] >= config["nthreads_per_batch"], "check config file, nbatch must be at least equal to nthreads"
+
+onstart:
+    print(f"""
+    The sumstat table is output in following format:
+    ## id\ta unique identifier of the simulation, usually consecutive numbers
+    ## rand\tthe random seed used for this simulation
+    ## exec_time\thow many seconds simulation and sumstat calculation took
+    ## param_no\tthe parameters used for this simulation (e.g. param_4)
+    ## stat_no\tthe summary statistic used for this simulation specified by
+    ## \t\tthe name and number of the according summarization (e.g. sfs_1)
+    #id rand stat_no
+        """)
+
+onsuccess:
+    print("Workflow finished, no error.")
+    print("Removing files..")
+    shutil.rmtree(".snakemake", ignore_errors=True)
+    print(".snakemake/ removed.")
+
+localrules: overall, produce_random_integers_for_abc_simulations, produce_random_integers_for_pods
+
+# abc simulation expansion
+id = list(range(*np.array(config["id_range_for_simulations"]).astype(np.float
+    ).astype(np.int)))
+listed_id_batches = [id[i:i + int(float(config["nbatch_simulations"]))]
+    for i in range(0, len(id), int(float(config["nbatch_simulations"])))]
+batch_dict_simulations = {my_index:listed_id_batches[my_index] for my_index in
+    range(math.ceil(len(id)/float(config["nbatch_simulations"])))}
+
+# pod simulation expansion
+num_pod_simulations = int(float(config["pod_number_of_simulations_per"]))
+pod_param_setup = [config['pod_population_size_recent'],
+    config['pod_population_size_ancient'], config['pod_population_size_change_time'],
+    config['pod_selfing_rate_recent'], config['pod_selfing_rate_ancient'],
+    config['pod_selfing_rate_change_time']]
+nums_pods = [len(i) for i in pod_param_setup]
+assert len(set(nums_pods)) == 1, "definitions of pod parameters vary in size"
+id_pod = list(range(num_pod_simulations))
+pod_iloc = list(range(nums_pods[0]))
+del num_pod_simulations, pod_param_setup
+listed_id_batches_pod = [id_pod[i:i + int(float(config["nbatch_pod"]))]
+    for i in range(0, len(id_pod), int(float(config["nbatch_pod"])))]
+batch_dict_pods = {my_index:listed_id_batches_pod[my_index] for my_index in
+    range(math.ceil(len(id_pod)/float(config["nbatch_pod"])))}
+
+# summary stat composition exponsion; +1 because R is 1 based
+sscomp = list(range(1, 1+len(config["sumstat_combination_to_use"])))
+
+# alternate_modelexpansion
+id_alt = list(range(*np.array(config["id_range_for_alt_model_simulations"]).astype(np.float
+    ).astype(np.int)))
+listed_id_batches_alt = [id_alt[i:i + int(float(config["nbatch_alt_model_simulations"]))]
+    for i in range(0, len(id_alt), int(float(config["nbatch_alt_model_simulations"])))]
+batch_dict_simulations_alt = {my_index:listed_id_batches_alt[my_index] for my_index in
+    range(math.ceil(len(id_alt)/float(config["nbatch_alt_model_simulations"])))}
+
+# helper function
+def get_pod_and_sscomp(filename):
+    a = filename.split("pod")[-1]
+    a = a.split("_")
+    sscomp = a[3]
+    pod = a[1].split("/")[0]
+    regression_method = a[-1].split(".")[0]
+    return pod, sscomp, regression_method
+
+def get_obs_and_sscomp(filename):
+    a = filename.split("obs_set")[-1]
+    a = a.split("_")
+    sscomp = a[3]
+    pod = a[1].split("/")[0]
+    regression_method = a[-1].split(".")[0]
+    return pod, sscomp, regression_method
+
+# regression_method expansion
+regression_method = config["regression_method"]
+pls_num_components = config["pls_components_for_loclinear"]
+
+# observed sumstat expansion
+obs_iloc = list(range(len(config["observed_tree_sequence"])))
+
+rule overall:
+    input: "data/table/performance/all_pod_performance.table.gzip"
+
+include: "snakes/01.simulate_summary_stat_table.smk"
+include: "snakes/02.simulate_pods_stat_table.smk"
+include: "snakes/03.abc_performance_analysis.smk"
+include: "snakes/04.simulate_alternate_model.smk"
+include: "snakes/05.model_choice.smk"
+#include: "snakes/06.obtain_observed_sumstats.smk"
+#include: "snakes/07.infer_params_from_observed_data.smk"
+
+rule aggregate_overall:
+    output:
+        perf_anal = "data/table/performance/all_pod_performance.table.gzip",
+# This is when working on parameter inference of observed data
+#        param_inf = "data/table/inference/all_obs_parameter_inference.table.gzip"
+    input:
+        # abc simulations
+        abc_simulations = "data/table/params_and_sumstats.table.gzip",
+       # pod simulations
+        pod_simulations = expand("data/table/params_and_sumstats_pod_{pod_iloc}.table.gzip",
+            pod_iloc=pod_iloc),
+       # performcance analysis
+        performance_analysis = expand("data/performance/pod_{pod_iloc}/perf_sscomp_{sscomp}_method_{regression_method}.table.gzip",
+            pod_iloc=pod_iloc, sscomp=sscomp, regression_method=regression_method),
+        # simulate sumstats for the alternative model
+        alt_model_simulations = "data/table/params_and_sumstats.alternate_model.table.gzip",
+        # performe model choice
+        model_choice = "data/table/model_choice_pod_aggregation.table.gzip",
+        # obtain observed sumstats
+#        observed_sumstats = expand("data/observed/stats.{observed_tree_sequence}.table.gzip",
+#            observed_tree_sequence=obs_iloc),
+        # parameter inference on observed sumstats
+#        parameter_inference = expand("data/inference/obs_set_{obs_iloc}/par_inference_{sscomp}_method_{regression_method}.table.gzip",
+#            obs_iloc=obs_iloc, sscomp=sscomp, regression_method=regression_method)
+    run:
+        list_of_performance_analysis = []
+        for f in input.performance_analysis:
+            df = pd.read_pickle(f)
+            npod, sscomp, regression_method = get_pod_and_sscomp(f)
+            print(f, npod, sscomp, regression_method)
+            df["pod"] = str(npod)
+            df["sscomp"] = str(sscomp)
+            df["regression_method"] = str(regression_method)
+            list_of_performance_analysis.append(df)
+            del df
+
+        df = pd.concat(list_of_performance_analysis)
+        print(df)
+        df.to_pickle(str(output.perf_anal))
+
+'''
+This is when working on real data
+        list_of_parameter_inferences = []
+        for f in input.parameter_inference:
+            df = pd.read_pickle(f)
+            nobs, sscomp, regression_method = get_obs_and_sscomp(f)
+            df["obs"] = str(nobs)
+            df["sscomp"] = str(sscomp)
+            df["regression_method"] = str(regression_method)
+            list_of_performance_analysis.append(df)
+            del df
+
+        df = pd.concat(list_of_parameter_inferences)
+        print(df.head())
+        df.to_pickle(str(output.param_inf), compression="gzip")
+'''
+
+
+
+
+
+rule produce_random_integers_for_abc_simulations:
+    output:
+        temp("data/rands/rands.gzip")
+    run:
+        df = pd.DataFrame(id, columns=['id'])
+
+        # seeds for drawing prior parameters
+        df['rand_prior'] = df['id'].apply(lambda _: np.random.randint(
+            *np.array(config["randint_range_for_drawing_prior"]).astype(
+            np.float).astype(np.int)))
+
+        # seeds for simulations
+        df['rand_simulation'] = df['id'].apply(lambda _: np.random.randint(
+            *np.array(config["randint_range_for_simulations"]).astype(
+            np.float).astype(np.int)))
+
+        # save as binary
+        df.to_pickle(str(output))
+
+rule produce_random_integers_for_pods:
+    output:
+        temp("data/rands/rands_pod_{pod_iloc}_.gzip")
+    run:
+        df = pd.DataFrame(id_pod, columns=['id'])
+
+        # seeds for simulations
+        df['rand_simulation'] = df['id'].apply(lambda _: np.random.randint(
+            *np.array(config["randint_range_for_simulations"]).astype(
+            np.float).astype(np.int)))
+
+        # save as binary
+        df.to_pickle(str(output))
+
+
+rule produce_random_integers_for_alternate_model:
+    output:
+        temp("data/rands/rands_alternate.gzip")
+    run:
+        df = pd.DataFrame(id, columns=['id'])
+
+        # seeds for drawing prior parameters
+        df['rand_prior'] = df['id'].apply(lambda _: np.random.randint(
+            *np.array(config["randint_range_for_drawing_prior"]).astype(
+            np.float).astype(np.int)))
+
+        # seeds for simulations
+        df['rand_simulation'] = df['id'].apply(lambda _: np.random.randint(
+            *np.array(config["randint_range_for_simulations"]).astype(
+            np.float).astype(np.int)))
+
+        # save as binary
+        df.to_pickle(str(output))
+

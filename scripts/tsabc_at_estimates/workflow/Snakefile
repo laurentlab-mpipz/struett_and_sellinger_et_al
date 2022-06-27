@@ -1,0 +1,57 @@
+"""
+This snake should do following things:
+
+If table of sumstats given from simulations and from observations, the estimates
+are performed and visualized. Conceptually following steps will happen:
+
+  + subset the summary stat sets
+  + create PLS
+  + transform stats
+  + perform the estimates for different pls
+  + visualize
+    + average interquantile ranges
+
+  + make a single estimate using the average of all samplings --> reduced
+    variance in the sumstats
+    + provide the prior vs posterior 
+"""
+
+
+import sys
+import shutil
+import numpy as np
+import pandas as pd
+from scripts.pyfunctions import tsabc2
+from scripts.pyfunctions import print_utils
+import re
+import math
+import itertools
+import tqdm
+
+
+configfile: "config/config.yaml"
+
+
+onstart:
+    print("sneak into snake..")
+
+
+onsuccess:
+    shutil.rmtree(".snakemake", ignore_errors=True)
+    print("removed .snakemake/")
+
+
+include: "rules/module00_target.smk"
+include: "rules/module01_preptables.smk"
+include: "rules/module02_estimate.smk"
+include: "rules/module03_plot.smk"
+
+
+rule overall:
+    input: target_files
+
+
+
+
+
+

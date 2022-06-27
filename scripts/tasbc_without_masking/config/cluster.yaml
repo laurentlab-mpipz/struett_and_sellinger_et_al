@@ -1,0 +1,39 @@
+__default__ :
+  queue     : "deptsiantis"
+  nCPUs     : "1"
+  memory    : "7000"
+  resources : "\"rusage[mem=4500]\""
+  name      : "tsabc3"
+aggregate_simulated_data:
+  memory    : "1700"
+  resources : "\"rusage[mem=1500]\""
+aggregate_single_pod_data:
+  memory    : "1700"
+  resources : "\"rusage[mem=1500]\""
+performance_analysis_of_neuralnetwork_regression:
+  memory    : "5000"
+  resources : "\"rusage[mem=4800]\""
+get_pls_dim_reduced_sumstats_for_abc_sims:
+  memory    : "4000"
+  resources : "\"rusage[mem=1500]\""
+provide_abc_table_as_txt:
+  memory    : "1000"
+  resources : "\"rusage[mem=800]\""
+provide_pod_table_as_txt:
+  memory    : "1000"
+  resources : "\"rusage[mem=800]\""
+transform_sumstats_of_abc_sims:
+  memory    : "4000"
+  resources : "\"rusage[mem=1500]\""
+transform_sumstats_of_pod_sims:
+  memory    : "4000"
+  resources : "\"rusage[mem=1500]\""
+performance_analysis_of_loclinear_regression:
+  memory    : "4000"
+  resources : "\"rusage[mem=1500]\""
+simulate_summary_stat_table_for_pods:
+  name      : "ts3_sim_obs"
+
+## snakemake cmd example
+# snakemake -j 20 -p --max-jobs-per-second 0.2 --max-status-checks-per-second 1 --resources mem_mb=500000 --cluster-config config/cluster.yaml --cluster "bsub -n {threads} -q {cluster.queue} -M {cluster.memory} -R {cluster.resources} -J {cluster.name} -m {cluster.nodes}" -k -nq
+# snakemake -j 20 -p --max-jobs-per-second 0.2 --max-status-checks-per-second 0.2 --cluster-config config/cluster.yaml --cluster "bsub -n {threads} -q {cluster.queue} -M {cluster.memory} -R {cluster.resources} -J {cluster.name} " --until draw_prior_param_and_simulate_summary_stat_table -nq

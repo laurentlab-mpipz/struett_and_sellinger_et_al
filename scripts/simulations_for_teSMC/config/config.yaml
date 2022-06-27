@@ -1,0 +1,67 @@
+#$ snakemake -j 96 --latency-wait 60 --cluster "bsub -J mspts_{rule} -q deptsiantis -R 'rusage[mem=200]' -M 1000 " -nq
+technical_replicates: 5 # this can be implemented for doing a combined analysis as if there would be multiple chromosome
+sample_size:          [20]
+mutation_rate:        [1e-8] #[4e-9, 1e-8, 1.930556e-09]
+recombination_rate:   [1e-8] #[3.6e-8, 1e-8]
+chromosome_length:    [1e6]
+chromosome_number:    5  # int
+teSMC:
+  inference_models:
+    - "Free"
+    - "Constant"
+    - "OneTransition"
+    # - "GivenTransition"
+# scaling of pop size in individuals and time in generations before present
+# pop_sizes and selfing_rates will be zipped, not as we would have default by
+# the product
+population_sizes_backward_in_time:
+# ABC
+ - [[40000, 0]] # 0
+ - [[40000, 0]] # 1
+ - [[40000, 0]] # 2
+ - [[40000, 0]] # 3
+ - [[40000, 0]] # 4
+ - [[40000, 0]] # 5
+ - [[40000, 0]] # 6
+ - [[40000, 0]] # 7
+ - [[40000, 0]] # 8
+ - [[40000, 0]] # 9
+ - [[40000, 0]] # 10
+ - [[40000, 0]] # 11
+ - [[40000, 0]] # 12
+ - [[40000, 0]] # 13
+ - [[40000, 0]] # 14
+ - [[40000, 0]] # 15
+ - [[40000, 0]] # 16
+ - [[40000, 0]] # 17
+ - [[40000, 0]] # 18
+ - [[40000, 0]] # 19
+ - [[40000, 0]] # 20
+ - [[40000, 0]] # 21
+selfing_rates_backward_in_time:
+# ABC
+  - [[0.99, 0], [0.1, 1000]]  #0
+  - [[0.99, 0], [0.1, 2000]]  #1
+  - [[0.99, 0], [0.1, 3000]]  #2
+  - [[0.99, 0], [0.1, 4000]]  #3
+  - [[0.99, 0], [0.1, 5000]]  #4
+  - [[0.99, 0], [0.1, 6000]]  #5
+  - [[0.99, 0], [0.1, 7000]]  #6
+  - [[0.99, 0], [0.1, 8000]]  #7
+  - [[0.99, 0], [0.1, 9000]]  #8
+  - [[0.99, 0], [0.1, 10000]]  #9
+  - [[0.99, 0], [0.1, 12000]]  #10
+  - [[0.99, 0], [0.1, 16000]]  #11
+  - [[0.99, 0], [0.1, 20000]]  #12
+  - [[0.99, 0], [0.1, 30000]]  #13
+  - [[0.99, 0], [0.1, 40000]]  #14
+  - [[0.99, 0], [0.1, 50000]]  #15
+  - [[0.99, 0], [0.1, 60000]]  #16
+  - [[0.99, 0], [0.1, 70000]]  #17
+  - [[0.99, 0], [0.1, 80000]]  #18
+  - [[0.99, 0], [0.1, 90000]]  #19
+  - [[0.99, 0], [0.1, 100_000]]  #20
+  - [[0.99, 0], [0.1, 200_000]]  #21
+
+
+

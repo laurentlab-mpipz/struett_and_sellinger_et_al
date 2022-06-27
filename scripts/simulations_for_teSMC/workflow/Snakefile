@@ -1,0 +1,137 @@
+
+"""
+snakemake to generate data for testing methods on inferring selfing rates
+
+"""
+
+import tskit
+import msprime
+from scripts.pyfuncs import *
+from scripts.mspts import *
+import random
+import sys
+import shutil
+import tqdm
+
+path_to_config = "config/config.yaml"
+configfile: path_to_config
+
+onstart:
+    print("params configuration check..", end="")
+    params_check = check_parameter_constraints(config)
+    print(f" successful: {params_check}")
+    print("sneak into snake..")
+onsuccess:
+    shutil.rmtree(".snakemake", ignore_errors=True)
+    print("removed .snakemake/")
+
+localrules: overall
+
+rule overall:
+    input:
+        # free teSMC
+        expand("results/esmc/demographic_scenario_{demography}/"
+            "rep_{replication}.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.{infmodel}.RDS",
+            sample_size=config["sample_size"],
+            demography=range(len(config["population_sizes_backward_in_time"])),
+            replication=range(config["technical_replicates"]),
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"],
+            infmodel=config["teSMC"]["inference_models"]),
+        # aggregated csvs
+        expand("results/esmc/demographic_scenario_{demography}/"
+            "rep_{replication}.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.csv",
+            sample_size=config["sample_size"],
+            demography=range(len(config["population_sizes_backward_in_time"])),
+            replication=range(config["technical_replicates"]),
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"]),
+        # aggregated all results
+        "results/esmc/table.rds",
+        # teSMC result figure
+        "results/figures/esmc_full_results.pdf",
+        # mse like Thibaut
+        "results/mse/table.csv",
+        #"results/figures/mse_full.pdf",
+        # rmse like me
+        #"results/rmse/table.csv",
+        #"results/figures/rb_rmse.pdf",
+        # transition time points in Free and OneTransition as when it crosses the 0.5 sigma boarder
+        "results/esmc/point_estim_for_OneTrans.csv"
+
+            
+
+'''
+        # ask for aggregated demograhpies for all replicates
+        expand("results/esmc/agg_plots/demographic_scenario_{demography}."
+            "aggregated.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.pdf",
+            sample_size=config["sample_size"],
+            demography=range(len(config["population_sizes_backward_in_time"])),
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"])
+'''
+
+
+include: "rules/module01_msp.smk"
+include: "rules/module02_obtain_mhs.smk"
+include: "rules/module03_eSMC_piecewise_constant_selfing.smk"
+include: "rules/module04_performance_of_eSMC.smk"
+include: "rules/module05_plot_eSMC_results.smk"
+
+'''
+        # ask for tree sequences; stage 1
+        expand("results/tree_sequences/demographic_scenario_{demography}/"
+            "rep_{replication}.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.ts",
+            replication=range(config["technical_replicates"]),
+            sample_size=config["sample_size"],
+            demography=range(len(config["population_sizes_backward_in_time"])),
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"]),
+        # ask for mhs files; stage 2
+        expand("results/mhs/demographic_scenario_{demography}/"
+            "rep_{replication}.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.mhs",
+            replication=range(config["technical_replicates"]),
+            sample_size=config["sample_size"],
+            demography=range(len(config["population_sizes_backward_in_time"])),
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"]),
+        # ask what thibaut calls the ARG pipeline; stage 2
+        expand("results/ps_esmc/demographic_scenario_{demography}/"
+            "rep_{replication}.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.pars",
+            replication=range(config["technical_replicates"]),
+            sample_size=config["sample_size"],
+            demography=range(len(config["population_sizes_backward_in_time"])),
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"]),
+        # ask for estimating and plotting the teSMC; stage 3
+        expand("results/esmc/demographic_scenario_{demography}/"
+            "rep_{replication}.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.pdf",
+            replication=range(config["technical_replicates"]),
+            sample_size=config["sample_size"],
+            demography=["0", "2", "5"],
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"]),
+        # ask for aggregated demograhpies for all replicates
+        expand("results/esmc/agg_plots/demographic_scenario_{demography}."
+            "aggregated.nsam_{sample_size}.mu_{mutation_rate}."
+            "r_{recombination_rate}.length_{chromosome_length}.pdf",
+            sample_size=config["sample_size"],
+            demography=["0", "2", "5"],
+            mutation_rate=config["mutation_rate"],
+            recombination_rate=config["recombination_rate"],
+            chromosome_length=config["chromosome_length"])
+'''

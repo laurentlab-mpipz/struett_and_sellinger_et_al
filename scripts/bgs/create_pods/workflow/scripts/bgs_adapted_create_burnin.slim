@@ -1,0 +1,180 @@
+/*
+This script is adapted from Danijel Majic's Master thesis project script.
+We simulate bgs with the DFE that we obtain from polyDFE (Manas Yoshi). We
+use a three-discrete distribution of selection coefficients.
+
+The aim of this script is to simulate PODs that underwent transitions to
+selfing. We provide two different models: the transitioning-to-selfing and 
+the confounder being a corresponding change-of-pop-size model.
+
+model types (string): "EX" explicit selfing
+							 "CF" confounder, just pop size change
+
+# TODO(me) implement the CF
+# TODO(me) define times as if backward-in-time
+# TODO(me) finish simulation if last time is exceeded
+
+*/
+
+initialize() {
+	initializeSLiMOptions(preventIncidentalSelfing=T);
+	initializeTreeSeq(
+		recordMutations=T,
+		simplificationInterval=1000	
+	);
+	
+	/*
+	defineConstant("mu", 1e-8);
+	defineConstant("r", 1e-8);
+	defineConstant("L", 1e6);
+	defineConstant("Ne", 4e3);
+	defineConstant("burnin", asInteger(10*Ne));  // this must be dependent on Ne because of BGS
+	defineConstant("outfileprefix", "testOutfile.bgs.ts");
+	defineConstant("model", "EX");
+	defineConstant("sigma", 0.99);
+	defineConstant("tsigma", c(1000, 10000, 20000));
+	defineConstant("logfile", "path_to_logfile.txt");
+	defineConstant("working_directory", "/Users/struett/Dropbox/transfer/bgs");
+	*/
+	
+	setwd(working_directory);
+	
+	initializeMutationRate(asFloat(mu));
+	initializeMutationType("m1", 0.5, "f", 0.0);  // neutral
+	initializeMutationType("m3", 0.1, "s", "a = sample(c(1,2,3),1,F,c(0.2,0.1,0.7));if (a == 1) {y = 0.5;}else if (a == 2){y = 5;}else if (a == 3){y = 15;}s = (y/(2*Ne));return(-s);");  // deleterious
+	// m3.convertToSubstitution = F;  // keep deleterious fitness effect; not needed, as there is no fitness callback involved in this simulation
+	initializeGenomicElementType("g1", c(m1,m3), c(1,9));  // exon
+	initializeGenomicElementType("g2", c(m1,m3), c(9,1));  // intron
+	initializeGenomicElementType("g3", c(m1), 1);  // non-coding
+	initializeRecombinationRate(asFloat(r));
+	
+	defineConstant("Ne", asInteger(Nepre));
+	defineConstant("L", asInteger(Lpre));
+	defineConstant("burnin", asInteger(10*Ne));
+
+	base = 0;
+	while (base < L-30000) {
+		// make a non-coding region
+		nc_length = asInteger(rweibull(1,2171.549,0.863)) + 1;
+		initializeGenomicElement(g3, base, base + nc_length - 1);
+		base = base + nc_length;
+		
+		// make first exon
+		ex_length = asInteger(rweibull(1,235.932347, 1.009043)) + 1;
+		initializeGenomicElement(g1, base, base + ex_length - 1);
+		base = base + ex_length;
+		
+		// make additional intron-exon pairs
+		// x represents the distribution of number of exens based on chr 1 of
+		// A thaliana
+		x = asInteger(rweibull(1, 5.50,1.14));
+		y = 0;
+		while (x>y)
+		{
+			in_length = asInteger(rweibull(1,174.86, 1.27)) + 1;
+			initializeGenomicElement(g2, base, base + in_length - 1);
+			base = base + in_length;
+			
+			ex_length = asInteger(rweibull(1,235.932347, 1.009043)) + 1;
+			initializeGenomicElement(g1, base, base + ex_length - 1);
+			base = base + ex_length;
+			y = y+1;
+		}
+	}
+	
+	// final non-coding region - fills up the rest of empty space with non-coding sequence.
+	nc_length = L-base;
+	initializeGenomicElement(g3, base, base + nc_length);
+	
+	
+	// create empty log-file with header
+	writeFile(filePath=logfile, contents="## logfile for WF-sim for transitioning to selfing", append=F);
+	this_content=c(
+		paste0(c("## ", "transitioning times: ", paste(sort(tsigma), sep=", "))),
+		paste0(c("## ", "mu: ", mu)),
+		paste0(c("## ", "r: ", r)),
+		paste0(c("## ", "Ne: ", Ne)),
+		paste0(c("## ", "burnin: ", burnin)),
+		paste0(c("## ", "prefix for output: ", outfileprefix)),
+		paste0(c("## ", "selfing rate: ", sigma)),
+		paste0(c("## ", "logfile: ", logfile)),
+		paste0(c("## ", "working directory: ", working_directory)),
+		paste0(c("## ", "expected final generation: ", burnin + max(tsigma))),
+		paste0(c("#generation\tmutations"))
+	);
+	writeFile(
+		filePath=logfile,
+		contents=paste(this_content, sep="\n"),
+		append=T
+		);
+}
+
+
+// first generation events
+1 {
+	sim.addSubpop("p1", Ne);
+}
+
+// all population manipulations and output of tree sequences
+1: late() {
+	// explicit selfing implementation
+	if (model == "EX") {
+		if (sim.generation == burnin) {
+			p1.setSelfingRate(asFloat(sigma));
+		}
+		
+	} else if (model == "CF") {
+		stop("You asked for the confounding model, which is not implemented, yet. Sorry!");
+		// p1.setSubpopulationSize( asInteger( Ne * ( 1 - 0.5 * sigma ) ) );
+	} else {
+		stop("The defined model does not exist.");
+	}
+	
+	// output tree sequence at defined time points after transition to selfing
+	// this is different from the script, that takes the created burnin
+	if (sim.generation == burnin) {
+		outfile_name = paste0(c(outfileprefix, ".ts"));
+		sim.treeSeqOutput(outfile_name);
+		
+		catn(c("Created burnin treeseq: ", outfile_name));
+		sim.simulationFinished();
+	}
+}
+
+
+// Progress
+1: {
+	if (sim.generation % 100 == 0 | any(sim.generation == c(1, 2, 3, 4, 5, 10, 20, 30, 40, 50))) {
+		writeFile(
+			filePath=logfile,
+			contents=paste0(c(sim.generation, "\t", p1.genomes.mutations.length(), "\t", time(), " ", date())),
+			append=T
+		);
+	}
+	
+	if (sim.generation % 1000 == 0) {
+		// memory usage
+		sim.outputUsage();
+	}
+}
+
+
+// finishing simulations
+1: late() {
+	// stop simulation if we exceeded the last generation that we wanted to output
+	if (sim.generation > burnin + max(tsigma) + 2) {  // 2 for security reasons; not needed
+		sim.simulationFinished();
+	}
+}
+
+
+// emergency stop
+1500000 late() {
+	catn("I do not want to simulate more than 1,5 Mio generations, but you can change the script");
+	sim.simulationFinished();
+}
+
+// more drastic emergency stop
+1500002 late() {
+	stop("I do not want to simulate more than 1,5 Mio generations, but you can change the script");
+}

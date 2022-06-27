@@ -1,0 +1,91 @@
+project_name                           : "tsabc3"
+id_range_for_simulations               : [0, 100_000] # unique id per simulation
+nbatch_simulations                     : 500
+nthreads_per_batch                     : 1 # needs to be smaller or equal to nbatch
+####
+# nthreads: how many parallele processes to run nbatch simulations
+# e.g. nbatch = 100 and nthreads = 20:
+#   20 processes in parallel and 5 simulations one after eachother on every process
+#   it makes sense to have nbatch as a multiple of nthreads
+randint_range_for_drawing_prior        : [0, 4294967295] # half-open
+randint_range_for_simulations          : [0, 4294967295] # half-open
+# prior parameter range ("lower", "upper", "numtype", "distributiontype")
+population_size_recent                 : [1e4, 2e5, "int", "logunif"]
+population_size_ancient                : [1, 1, "int", "logunif"] # not used here
+population_size_change_time            : [1, 1, "int", "uniform"] # not used here
+selfing_rate_recent                    : [0.5, 1, "float", "uniform"]
+selfing_rate_ancient                   : [0, 0.2, "float", "uniform"]
+selfing_rate_change_time               : [1e3, 5e5, "int", "logunif"]
+# specifications concerning the coalescent simulations
+recombination_rate                     : 1e-08
+mutation_rate                          : 1e-08
+chromosome_length                      : 1e6
+num_independent_regions                : 5 # imagine 5 chromsomes
+sample_size_simulation                 : 20
+generations_dtwf                       : 1000
+# specifications concerning the summarizing statistics
+sfs_stat_properties                    : ["site", "folded"] # site statistic
+ld_num_of_considered_mutations         : 2000
+ld_binning_breaks                      : [1, 6105.472, 11379.62, 21209.786,
+                                          39531.638, 73680.63, 137328.871,
+                                          255958.978, 477066.461, 889175.328,
+                                          1e6]
+tl_true_max_number_of_pairs            : 190 # same number is used for both tm
+tl_true_number_of_bins                 : 20
+tl_true_binning_scale_factor           : 8 # how the distr of breakpoints is
+tl_true_minimal_length_bin_size        : 2000 # the shortest length bin
+tm_win_properties                      : [1e4, 1e4, "site", 20] # window-size, window-step, stat-mode, number of discretized bins
+tm_win_binning_scale_factor            : 8 # how the distr of breakpoints is
+# specifications for pods with fixed parameters
+pod_number_of_simulations_per          : 100
+nbatch_pod                             : 25
+pod_population_size_recent             : [40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000]
+pod_population_size_ancient            : [40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000, 40_000]
+pod_population_size_change_time        : [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+pod_selfing_rate_recent                : [0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99]
+pod_selfing_rate_ancient               : [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+pod_selfing_rate_change_time           : [20_000, 2_000, 4_000, 8_000, 12_000, 16_000, 30_000, 40_000, 60_000, 80_000, 100_000, 200_000, 1000, 3000, 5000, 6000, 7000, 9000, 10000, 50000, 70000, 90000]
+# specifications for the performance analysis
+number_of_tolerated_simulations        : 1000
+point_estimate                         : ["mean", "median", "mode"] # mean, median or mode
+regression_method                      : ["loclinear"] # , "neuralnet"] # abc package
+number_max_pls_for_transformation      : 51
+pls_components_for_loclinear           : [5, 10, 20, 30]
+sumstat_combination_to_use:
+  - ["sfs", "ld"]
+  - ["tl_true"]
+  - ["tm_true"]
+  - ["tm_win"]
+  - ["sfs", "ld", "tm_win"]
+# alternative model specifications
+id_range_for_alt_model_simulations     : [0, 100_000] # unique id per simulation
+nbatch_alt_model_simulations           : 500
+# prior parameter range ("lower", "upper", "numtype", "distributiontype")
+alt_model_population_size_recent       : [1e4, 2e5, "int", "logunif"]
+alt_model_population_size_ancient      : [1e4, 2e5, "int", "logunif"]
+alt_model_population_size_change_time  : [1e3, 5e5, "int", "logunif"]
+alt_model_selfing_rate                 : [0.5, 1, "float", "uniform"]
+# model_choice_parameters
+model_choice_tolerance                 : 1000
+# obseved stats
+observed_tree_sequence                 :
+  - "indata/observed_tree_sequences/at_chr_2_14697000_19697000.ts"
+  - "indata/observed_tree_sequences/at_chr_2_14697000_19697000_pop_ibnr95.ts"
+sample_size_observations               : 20 # should be of the same as the simulations
+nsample_observations                   : 1000 # how often to sample; usually only ~70 samplings are successful
+# parameter inference
+par_inf_number_of_tolerated_simulations: 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+

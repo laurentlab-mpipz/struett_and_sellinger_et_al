@@ -1,0 +1,427 @@
+
+'''
+Pipeline for the creation of TL_TRUE and TM_true under pure coalescent using msprime.
+
+Different Models are aimed for:
+===============================
+A
+A population of constant sizes undergoes a transition to selfing at a given
+time in the past. We sample TL from pairs
+B
+A population size change alone
+'''
+
+import shutil
+from scripts.pyfunctions import tsabc2
+import tskit
+import numpy as np
+import pandas as pd
+from heapq import nlargest
+import random
+import sys
+import msprime
+
+onstart:
+    print("Sneak into snake")
+onsuccess:
+    print("Workflow finished successfully")
+    print("removing files..")
+    shutil.rmtree(".snakemake/")
+    print("done")
+
+configfile: "config.yaml"
+
+rule overall:
+    input:
+        expand("data/gif/scenario_{scenario}_sigma_{sigma}.tl_true.gif",
+            scenario=config["scenario"],
+            sigma=config["sigma"]
+            ),
+        expand("data/gif/scenario_{scenario}_sigma_{sigma}.tm_true.gif",
+            scenario=config["scenario"],
+            sigma=config["sigma"]
+            ),
+        expand("data/gif/scenario_{scenario}_sigma_{sigma}.tm_win.gif",
+            scenario=config["scenario"],
+            sigma=config["sigma"]
+            )
+
+rule run_msprime_scenario_ts:
+    output:
+        "data/trees/repid_{repid}_scenario_ts_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_CS_ts_{tsigma}_.ts"
+    input:
+        "scripts/run_msprime.py"
+    params:
+        Ne = "{Ne}",
+        L = "{L}",
+        r = "{r}",
+        sigma = "{sigma}",
+        t_sigma = "{tsigma}",
+        nsample = config["sample_size_for_simulation"]
+    shell:
+        r"""
+        python {input} -o {output} \
+            -sigma {params.sigma} -t_sigma {params.t_sigma} \
+            -Ne {params.Ne} -r {params.r} -L {params.L} \
+            -n {params.nsample}
+        """
+
+rule run_msprime_scenario_tNe:
+    output:
+        "data/trees/repid_{repid}_scenario_tNe_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_CS_ts_{tsigma}_.ts"
+    input:
+        "scripts/run_msprime_tNe.py"
+    params:
+        Ne = "{Ne}",
+        L = "{L}",
+        r = "{r}",
+        sigma = "{sigma}",
+        t_sigma = "{tsigma}",
+        nsample = config["sample_size_for_simulation"]
+    shell:
+        r"""
+        python {input} -o {output} \
+            -sigma {params.sigma} -t_sigma {params.t_sigma} \
+            -Ne {params.Ne} -r {params.r} -L {params.L} \
+            -n {params.nsample}
+        """
+
+rule run_slim_scenario_ts:
+    output:
+        "data/trees/repid_{repid}_scenario_ts_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_EX_ts_{tsigma}_.ts"
+    input:
+        "scripts/run_slim.py"
+    params:
+        Ne = "{Ne}",
+        L = "{L}",
+        r = "{r}",
+        sigma = "{sigma}",
+        t_sigma = "{tsigma}",
+        nsample = config["sample_size_for_simulation"]
+    shell:
+        r"""
+        """
+
+rule run_slim_scenario_tNe:
+    output:
+        "data/trees/repid_{repid}_scenario_tNe_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_EX_ts_{tsigma}_.ts"
+    input:
+        "scripts/run_slim_tNe.py"
+    params:
+        Ne = "{Ne}",
+        L = "{L}",
+        r = "{r}",
+        sigma = "{sigma}",
+        t_sigma = "{tsigma}",
+        nsample = config["sample_size_for_simulation"]
+    shell:
+        r"""
+        """
+
+rule extract_tl_true:
+    output:
+        temp("data/df_tl_true/repid_{repid}_scenario_{scenario}_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_{model}_ts_{tsigma}_.csv")
+    input:
+        "data/trees/repid_{repid}_scenario_{scenario}_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_{model}_ts_{tsigma}_.ts"
+    threads: 1
+    params:
+        nsam = config["size_of_pairwise_sampling"]
+    script: "scripts/extractJaol_msprimeTrees.py"
+
+rule extract_tm_true:
+    output:
+        temp("data/df_tm_true/repid_{repid}_scenario_{scenario}_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_{model}_ts_{tsigma}_.csv"),
+        bin_breaks = "data/breaks/tmrca.bins.wc.{repid}.{scenario}.{Ne}.{sigma}.{r}.{L}.{model}.{tsigma}.npy"
+    input:
+        "data/trees/repid_{repid}_scenario_{scenario}_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_{model}_ts_{tsigma}_.ts"
+    threads: 1
+    params:
+        configuration = config
+    # script: "scripts/extract_tm_true_msprimeTrees.py"
+    run:
+        infile = str(input)
+        outfile = str(output[0])
+
+        def sample_from_iterable(iterable, samplesize):
+            return (x for _, x in nlargest(samplesize, ((random.random(), x) for x in iterable)))
+
+        def ri(): return random.randint(0,1)
+
+        def getOnlyDiINDS(ts):
+            return np.array([node.id for node in ts.nodes() if node.is_sample()]).flatten('C')
+
+        def getPairTs(ts):
+
+            # get two random individuals
+            i, j = sample_from_iterable(getOnlyDiINDS(ts), 2)
+
+            # simplify tree by individuals
+            return ts.simplify([i, j])
+
+        def getTmtrue(ts, params, output):
+            tsabc = tsabc2()
+
+            # get binned tl_true
+            breaks = tsabc.get_breaks_for_binnning_tl_true(
+                float(params.configuration['tl_true_binning_scale_factor']),
+                np.mean([float(params.configuration['pod_population_size_recent'][0]),
+                    float(params.configuration['pod_population_size_ancient'][0])]),
+                int(float(params.configuration['tl_true_number_of_bins'])))
+            np.save(output.bin_breaks, breaks)
+            tl_true, num_pairs, tl_table = tsabc.get_list_tmrcas_and_lengths(ts,
+                int(float(params.configuration['size_of_pairwise_sampling'])))
+            vector_tl_true = tsabc.get_binned_tmrcas_from_true_tl_array(tl_true,
+                breaks, params.configuration['chromosome_length'], num_pairs,
+                float(params.configuration['tl_true_minimal_length_bin_size']))
+
+            # get tm_true
+            tmrcas = [np.array(tl_true_of_pair)[:,1] for tl_true_of_pair in tl_table]
+            dtmrcas = tsabc.discretize_list_tmrca_lists(tmrcas, breaks)
+            tms = tsabc.transition_matrices_from_tiscretized_tmrcas(dtmrcas, len(breaks))
+            vector_tm_true = np.mean(tms, axis=0).flatten('C')
+            del tmrcas, dtmrcas, tms, breaks
+
+            return vector_tm_true
+
+        # load tree; simplify!
+        ts = tskit.load(infile).simplify()
+
+        # get jaol (joint age on length)
+        tm_true = getTmtrue(ts, params, output)
+
+        # write table into file
+        np.savetxt(
+            outfile,
+            tm_true,
+            delimiter="\t",
+            header="transition_probability"
+            )
+
+rule extract_tm_win:
+    output:
+        temp("data/df_tm_win/repid_{repid}_scenario_{scenario}_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_{model}_ts_{tsigma}_.csv"),
+        bin_breaks = "data/breaks/tmrca.bins.tmwin.{repid}.{scenario}.{Ne}.{sigma}.{r}.{L}.{model}.{tsigma}.npy"
+    input:
+        "data/trees/repid_{repid}_scenario_{scenario}_Ne_{Ne}_"
+        "sigma_{sigma}_r_{r}_L_{L}_model_{model}_ts_{tsigma}_.ts"
+    params:
+        configuration = config
+    threads: 1
+    run:
+        infile = str(input)
+        outfile = str(output[0])
+
+        def getTmwin(ts, params, output):
+            tsabc = tsabc2()
+
+            # tm_win breaks, uses pi not tmrca
+            breaks = tsabc.get_breaks_for_binning_tm_win(
+                float(params.configuration['tm_win_binning_scale_factor']),
+                int(float(params.configuration['tm_win_size_and_step'])),
+                float(params.configuration['mutation_rate']),
+                np.mean([float(params.configuration['pod_population_size_recent'][0]),
+                    float(params.configuration['pod_population_size_ancient'][0])]),
+                int(float(params.configuration['tm_win_num_of_bins'])) )
+            np.save(output.bin_breaks, breaks)
+
+            # get tm_win
+            winpis = tsabc.get_list_of_pairwise_diversities(ts,
+                int(float(params.configuration['size_of_pairwise_sampling'])),
+                "site",
+                int(float(params.configuration['tm_win_size_and_step'])), 2,
+                int(float(params.configuration['tm_win_size_and_step'])),
+                np.random.randint(1, 4294967296) ).to_numpy()[:,2:].transpose()
+            dwinpis = np.array(tsabc.discretize_list_tmrca_lists(winpis, breaks) )
+            tms = tsabc.transition_matrices_from_tiscretized_tmrcas(dwinpis, len(breaks))
+            vector_tm_win = np.mean(tms, axis=0).flatten('C')
+            del winpis, dwinpis, tms, breaks
+
+            return vector_tm_win
+
+        # load tree; simplify!
+        ts = tskit.load(infile).simplify()
+
+        # mutate the tree
+        mutated = msprime.mutate(ts,
+            rate = params.configuration["mutation_rate"], keep = True)
+
+        # get windowed pi transition matrix
+        tm_win = getTmwin(mutated, params, output)
+
+        # write table into file
+        np.savetxt(
+            outfile,
+            tm_win,
+            delimiter="\t",
+            header="transition_probability"
+            )
+
+rule aggregate_tl_true:
+    output:
+        df = "data/df_tl_true/df_tl_true_scenario_{scenario}_sigma_{sigma}_ts_{tsigma}_.pickle.gzip"
+    input:
+        expand("data/df_tl_true/repid_{repid}_scenario_{{scenario}}_Ne_{Ne}_"
+            "sigma_{{sigma}}_r_{r}_L_{L}_model_{model}_ts_{{tsigma}}_.csv",
+            repid=range(config['number_of_technical_replicates']),
+            Ne=config['population_size'],
+            r=config['recombination_rate'],
+            L=config['chromosome_length'],
+            model=config['model']
+            )
+    run:
+        def read_spec_df(my_file):
+            df = pd.read_csv(my_file, sep="\t")
+            df['path'] = my_file
+            return df
+
+        def main():
+            df = pd.concat([read_spec_df(my_file) for my_file in input])
+            df.to_pickle(output.df, "gzip")
+
+        main()
+
+rule aggregate_tm_true:
+    output:
+        df = "data/df_tm_true/df_tm_true_scenario_{scenario}_sigma_{sigma}_ts_{tsigma}_.pickle.gzip"
+    input:
+        expand("data/df_tm_true/repid_{repid}_scenario_{{scenario}}_Ne_{Ne}_"
+            "sigma_{{sigma}}_r_{r}_L_{L}_model_{model}_ts_{{tsigma}}_.csv",
+            repid=range(config['number_of_technical_replicates']),
+            Ne=config['population_size'],
+            r=config['recombination_rate'],
+            L=config['chromosome_length'],
+            model=config['model']
+            )
+    run:
+        def read_spec_df(my_file):
+            df = pd.read_csv(my_file, sep="\t").transpose()
+            df['path'] = my_file
+            return df
+
+        def main():
+            df = pd.concat([read_spec_df(my_file) for my_file in input])
+            df.to_pickle(output.df, "gzip")
+
+        main()
+
+rule aggregate_tm_win:
+    output:
+        df = "data/df_tm_win/df_tm_win_scenario_{scenario}_sigma_{sigma}_ts_{tsigma}_.pickle.gzip"
+    input:
+        expand("data/df_tm_win/repid_{repid}_scenario_{{scenario}}_Ne_{Ne}_"
+            "sigma_{{sigma}}_r_{r}_L_{L}_model_{model}_ts_{{tsigma}}_.csv",
+            repid=range(config['number_of_technical_replicates']),
+            Ne=config['population_size'],
+            r=config['recombination_rate'],
+            L=config['chromosome_length'],
+            model=config['model']
+            )
+    run:
+        def read_spec_df(my_file):
+            df = pd.read_csv(my_file, sep="\t").transpose()
+            df['path'] = my_file
+            return df
+
+        def main():
+            df = pd.concat([read_spec_df(my_file) for my_file in input])
+            df.to_pickle(output.df, "gzip")
+
+        main()
+
+rule visualize_tm_true:
+    output:
+        pdf = "data/vis/scenario_{scenario}_sigma_{sigma}_ts_{tsigma}.tm_true.pdf"
+    input:
+        tm_true = "data/df_tm_true/df_tm_true_scenario_{scenario}_sigma_{sigma}_ts_{tsigma}_.pickle.gzip",
+        breaks = "data/breaks/tmrca.bins.wc.0.ts.50000.0.95.3.4e-09.20000000.CS.4.npy"
+    params:
+        script = "scripts/vis_tm_true.R"
+    shell:
+        r"""
+        Rscript --vanilla {params.script} {output.pdf} {input}
+        """
+
+rule visualize_tl_true:
+    output:
+        pdf = "data/vis/scenario_{scenario}_sigma_{sigma}_ts_{tsigma}.tl_true.pdf"
+    input:
+        tl_true = "data/df_tl_true/df_tl_true_scenario_{scenario}_sigma_{sigma}_ts_{tsigma}_.pickle.gzip"
+    params:
+        script = "scripts/vis_tl_true.R"
+    shell:
+        r"""
+        Rscript --vanilla {params.script} {output.pdf} {input}
+        """
+
+rule visualize_tm_win:
+    output:
+        pdf = "data/vis/scenario_{scenario}_sigma_{sigma}_ts_{tsigma}.tm_win.pdf"
+    input:
+        tm_win = "data/df_tm_win/df_tm_win_scenario_{scenario}_sigma_{sigma}_ts_{tsigma}_.pickle.gzip",
+        breaks = "data/breaks/tmrca.bins.tmwin.0.tNe.50000.0.95.3.4e-09.20000000.CS.0.npy"
+    params:
+        script = "scripts/vis_tm_win.R"
+    shell:
+        r"""
+        Rscript --vanilla {params.script} {output.pdf} {input}        
+        """
+
+rule create_gif:
+    output:
+        gif_tl_true = "data/gif/scenario_{scenario}_sigma_{sigma}.tl_true.gif",
+        gif_tm_true = "data/gif/scenario_{scenario}_sigma_{sigma}.tm_true.gif",
+        gif_tm_win = "data/gif/scenario_{scenario}_sigma_{sigma}.tm_win.gif"
+    input:
+        pdf_tl_true = expand("data/vis/scenario_{{scenario}}_sigma_{{sigma}}_ts_{tsigma}.tl_true.pdf",
+            tsigma=config["time_sigma"]
+            ),
+        pdf_tm_true = expand("data/vis/scenario_{{scenario}}_sigma_{{sigma}}_ts_{tsigma}.tm_true.pdf",
+            tsigma=config["time_sigma"]
+            ),
+        pdf_tm_win = expand("data/vis/scenario_{{scenario}}_sigma_{{sigma}}_ts_{tsigma}.tm_win.pdf",
+            tsigma=config["time_sigma"]
+            )
+    params:
+        script_tl_true = "scripts/tl2gif.R",
+        script_tm_true = "scripts/tm2gif.R",
+        script_tm_win = "scripts/tmw2gif.R"
+    threads: 3
+    shell:
+        r"""
+        # tl_true
+        Rscript --vanilla {params.script_tl_true} {output.gif_tl_true} {input.pdf_tl_true} &
+        # tm_true
+        Rscript --vanilla {params.script_tm_true} {output.gif_tm_true} {input.pdf_tm_true} &
+        # tm_win
+        Rscript --vanilla {params.script_tm_win} {output.gif_tm_win} {input.pdf_tm_win} &
+
+        echo "started gif creation"
+        wait
+
+        echo "done"
+        """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,15 @@
+__default__ :
+    queue     : "deptsiantis"
+    nCPUs     : "1"
+    memory    : "1000"
+    resources : "\"rusage[mem=200]\""
+    name      : "simts"
+teSMC_inferenceModel:
+    memory    : "15000"
+    resources : "\"rusage[mem=2000]\""
+    name      : "tesmc09"
+analyse_args:
+    name      : "arganalysis"
+
+# snakemake -j 96 --latency-wait 60 --max-jobs-per-second 1 --resources swap_gb=180 --cluster-config config/cluster.yaml --cluster "bsub -n {threads} -q {cluster.queue} -M {cluster.memory} -R {cluster.resources} -J {cluster.name} " --until teSMC_inferenceModel -nq
+# snakemake -j 66 --latency-wait 300 --max-jobs-per-second 1 --cluster-config config/cluster.yaml --cluster "bsub -n {threads} -q {cluster.queue} -M {cluster.memory} -R {cluster.resources} -J {cluster.name} " -k -nq
