@@ -1,0 +1,2 @@
+mode                               : "ALL"
+chromsomomal_positional_multiplier : 100_000_000 # e.g. pos 83,457 on chr 2 would result in 200,083,457

@@ -1,0 +1,193 @@
+
+"""
+tsinfer on the complete a.t. dataset from 1135 (2016) data set
+http://1001genomes.org/data/GMI-MPI/releases/v3.1/SNP_matrix_imputed_hdf5/1001_SNP_MATRIX.tar.gz
+"""
+
+import sys
+import tskit
+import tsinfer
+import h5py
+import numpy as np
+import pandas as pd
+import json
+from tqdm import tqdm
+
+onstart:
+    print("sneak into snake")
+
+configfile: "config/config.yaml"
+
+localrules: overall
+
+assert config["mode"] == "ALL", "currently only supported mode is 'ALL'"
+
+rule overall:
+    input:
+        tree_sequence = "data/1135_simplified.ts"
+
+rule prepare_sample_for_tree_sequence:
+    output:
+        kinship_matrix = "data/1135_kinship_matrix.gzip",
+        sample_data = "data/1135_tsinfer.sample"
+    input:
+        snp_matrix = "indata/imputed_snps_binary.hdf5",
+        kinship = "indata/kinship_ibs_mac5.hdf5",
+        accessions = "indata/1135_accessions.csv",
+    params: config
+    threads: 1
+    run:
+        accession_information = pd.read_csv(input.accessions)
+        populations = [lpop for lpop in set(accession_information["cluster"])]
+        
+        # create sample dat for tsinfer
+        with h5py.File(input.snp_matrix,'r') as fsnp:
+
+            chr_regions = fsnp['positions'].attrs['chr_regions']
+            positions = fsnp['positions'][:]
+            print("loading genotypes..")
+            genotypes = fsnp['snps'][:]
+            print("loading genotpyes.. done\n")
+            accessions_order = [json.loads(i) for i in fsnp["accessions"]]
+            assert accessions_order == [i for i in accession_information["id"]], "please make sure that the individuals and the genotypes will be added in the same order"
+
+            # prepare chromosomal multiplication for add_sites
+            chr_position_dict = {}
+            for chr_ix, chr_name in enumerate([json.loads(i) for i in fsnp['positions'].attrs["chrs"]]):
+                assert isinstance(chr_name, int), "chromosome name must be integer"
+                chr_position_dict[chr_name] = fsnp['positions'].attrs["chr_regions"][chr_ix]
+            df_chr_position = pd.DataFrame(data=chr_position_dict).transpose()
+
+            # create the SampleData
+            with tsinfer.SampleData(path=output.sample_data) as sampledat:
+                # add populations
+                for population in tqdm(populations, desc=" pops"):
+                    sampledat.add_population(metadata={"name": population})
+
+                # add individuals
+                for index, row in tqdm(accession_information.iterrows(),
+                    total=len(accession_information.index), desc=" indv"):
+                    sampledat.add_individual(
+                        ploidy=1,
+                        metadata={
+                            'id': row['id'],
+                            'sequenced_by': row['sequenced_by'],
+                            'name': row['name'],
+                            'country': row['country'],
+                            'name_2': row['name_2'],
+                            'lat': row['lat'],
+                            'long': row['long'],
+                            'collected_by': row['collected_by'],
+                            'date': row['date'],
+                            'cs_number': row['cs_number'],
+                            'cluster': row['cluster'],
+                            'info_3': row['info_3'],
+                            'map_symbol': row['map_symbol']
+                            },
+                        population=populations.index(row['cluster'])
+                        )
+
+                # add sites
+                print("alleles not specified, set to A/T")
+                previous_position = -1
+                count_positional_conflicts = 0
+                for ix, i in tqdm(enumerate(positions), total=len(positions),
+                    desc=" sites:"):
+
+                    # determine a positional multiplier per chromosoem to infer all chromosomes as one seq
+                    which_chr = df_chr_position.index.values[(df_chr_position[0] <= ix) &
+                        (ix < df_chr_position[1])][0]
+
+                    modified_position = i + which_chr * config["chromsomomal_positional_multiplier"]
+                    if modified_position > previous_position:
+                        sampledat.add_site(
+                            position=modified_position,
+                            genotypes=genotypes[ix],
+                            alleles=["A","T"])
+                    else:
+                        count_positional_conflicts += 1
+
+                    previous_position = modified_position
+                    
+                print(f"number of unordered sns: {count_positional_conflicts}")
+
+        with h5py.File(input.kinship, 'r') as fkin:
+            kinship = fkin["kinship"]
+
+            pd.DataFrame(np.array(kinship)).to_pickle(output.kinship_matrix,
+                compression=os.path.splitext(output.kinship_matrix)[1][1::])
+
+rule generate_ancestors_from_sample_data:
+    output:
+        anc_file = "data/1135_tsinfer_tree_sequence.ancestors"
+    input:
+        sample_data = "data/1135_tsinfer.sample"
+    params: config
+    threads: 40
+    shadow: "shallow"
+    shell:
+        r"""
+        echo "start generating ancestors"
+        python3 -m tsinfer ga {input.sample_data} -p -t {threads} -a {output.anc_file}
+        """
+
+rule match_ancestors_from_anc_data:
+    output:
+        tree_sequence = "data/1135_tsinfer_tree_sequence.ancestors.trees"
+    input:
+        sample_data = "data/1135_tsinfer.sample",
+        ancestors = "data/1135_tsinfer_tree_sequence.ancestors"
+    params: config
+    threads: 40
+    shadow: "shallow"
+    shell:
+        r"""
+        echo "start matching ancestors "
+        python3 -m tsinfer ma {input.sample_data} -p -t {threads} -A {output.tree_sequence} -a {input.ancestors}
+        """
+
+rule match_samples_from_trees:
+    output:
+        tree_sequence = "data/1135_tsinfer_tree_sequence.ts"
+    input:
+        sample_data = "data/1135_tsinfer.sample",
+        ancestor_trees = "data/1135_tsinfer_tree_sequence.ancestors.trees"
+    params: config
+    threads: 40
+    shadow: "shallow"
+    shell:
+        r"""
+        echo "start matching samples "
+        python3 -m tsinfer ms {input.sample_data} \
+            -p -t {threads} -O {output.tree_sequence} \
+            -A {input.ancestor_trees} \
+            --no-simplify
+        echo "inference completed sucessfully"
+        python3 -m tsinfer ls {output.tree_sequence}
+        """
+
+rule simplify_tree_sequence:
+    output:
+        tree_sequence = "data/1135_simplified.ts"
+    input:
+        tree_sequence = "data/1135_tsinfer_tree_sequence.ts"
+    params: config
+    threads: 1
+    run:
+        ts = tskit.load(input.tree_sequence).simplify()
+        ts.dump(output.tree_sequence)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
