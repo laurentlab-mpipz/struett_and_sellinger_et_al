@@ -18,7 +18,7 @@ Scripots to reshape the analysed data for creating the supplemental figures.
 Workflows for the simulations and analyses from the publication
 
   + at_treeseq
-  Workflow to generate the tree sequence from the already published A. thaliana data (Figure 5)
+  Workflow to generate the tree sequence from the already published A. thaliana data (Figure 5) which serves as input file for estimating the transition to selfing of A. thaliana.
 
   + bgs
   Workflow to analyse the robustness of tsABC to negative linked selection (Figure 4B)
